@@ -1,0 +1,13 @@
+{
+  "name": "booksy-api",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "refresh": "node --env-file=.env refresh.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "playwright-core": "^1.59.1"
+  }
+}

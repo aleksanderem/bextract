@@ -1,0 +1,4 @@
+node_modules/
+.credentials.json
+.browser-profile/
+.env
