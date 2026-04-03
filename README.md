@@ -23,8 +23,11 @@ Plik `.env`:
 
 ```
 BROWSERLESS_TOKEN=your_browserless_token
+API_KEY=your_api_key
 PORT=3000
 ```
+
+`API_KEY` — klucz wymagany w nagłówku `x-api-key` każdego requestu. Bez niego serwer nie wystartuje.
 
 ## Użycie
 
@@ -43,7 +46,7 @@ Przy pierwszym uruchomieniu (brak `.credentials.json`) serwer automatycznie łą
 Pobiera dane salonu po ID.
 
 ```bash
-curl http://localhost:3000/api/salon/100080
+curl -H "x-api-key: YOUR_API_KEY" http://localhost:3000/api/salon/100080
 ```
 
 Response: pełny obiekt business z API Booksy (nazwa, adres, telefon, email, recenzje, personel, usługi, godziny otwarcia itd.)

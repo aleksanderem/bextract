@@ -8,11 +8,24 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+const API_KEY = process.env.API_KEY;
+if (!API_KEY) {
+  console.error('[server] brak API_KEY w env — ustaw go przed startem');
+  process.exit(1);
+}
+
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+app.use((req, res, next) => {
+  if (req.headers['x-api-key'] !== API_KEY) {
+    return res.status(401).json({ error: 'Nieprawidlowy lub brak x-api-key' });
+  }
   next();
 });
 
