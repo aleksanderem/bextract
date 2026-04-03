@@ -60,6 +60,11 @@ async function callApiOnce(creds, businessId) {
 }
 
 export function extractBusinessId(url) {
-  const match = url.match(/\/(\d+)(?:[?#]|$)/);
-  return match ? match[1] : null;
+  // booksy.com/{locale}/{id}_slug... e.g. /en-pl/36993_barber-shop...
+  const booksyMatch = url.match(/booksy\.com\/[a-z]{2}-[a-z]{2}\/(\d+)/);
+  if (booksyMatch) return booksyMatch[1];
+
+  // fallback: bare /digits at end or before ? / #
+  const fallback = url.match(/\/(\d+)(?:[_?#]|$)/);
+  return fallback ? fallback[1] : null;
 }
