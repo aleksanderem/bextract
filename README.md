@@ -51,6 +51,52 @@ curl -H "x-api-key: YOUR_API_KEY" http://localhost:3000/api/salon/100080
 
 Response: pełny obiekt business z API Booksy (nazwa, adres, telefon, email, recenzje, personel, usługi, godziny otwarcia itd.)
 
+#### `GET /api/salon/:id/reviews?page=1&per_page=10`
+
+Pobiera paginowane recenzje salonu.
+
+```bash
+curl -H "x-api-key: YOUR_API_KEY" "http://localhost:3000/api/salon/100080/reviews?page=1&per_page=50"
+```
+
+Query params:
+- `page` (alias: `reviews_page`) — numer strony, domyślnie 1
+- `per_page` (alias: `reviews_per_page`) — ile recenzji na stronę, 1–50, domyślnie 10
+
+Response:
+
+```json
+{
+  "reviews": [
+    {
+      "id": 16039032,
+      "rank": 5,
+      "review": "Super! 🤩👌",
+      "title": "",
+      "verified": true,
+      "appointment_date": "2026-04-08T10:00",
+      "created": "2026-04-08T14:08",
+      "reply_content": "Dziękujemy za opinię 🫶",
+      "reply_updated": "2026-04-08T21:04",
+      "user": { "id": 9544910, "first_name": "Klaudia", "last_name": "W…" },
+      "services": [{ "id": 2018529, "name": "Uzupełnienie żel/hybryda jeden kolor" }],
+      "staff": [{ "id": 375575, "name": "Olga 30% Rabat" }],
+      "photos": [],
+      "business": { "id": 36993, "name": "Barber SHOP & Tattoo Studio" }
+    }
+  ],
+  "reviews_count": 2362,
+  "reviews_rank": 4.86,
+  "reviews_stars": 5,
+  "reviews_page": 1,
+  "reviews_per_page": 50,
+  "num_reviews_per_rank": { "1": 52, "2": 18, "3": 16, "4": 37, "5": 2239 },
+  "filtered_reviews_count": 2362
+}
+```
+
+Rate limit: callers powinni zachowac ~500ms odstep miedzy requestami, zeby nie wpasc w rate limiting Booksy.
+
 #### `GET /api/salon?url=<booksy_url>`
 
 Pobiera dane salonu po URL strony Booksy. ID jest wyciągane automatycznie.

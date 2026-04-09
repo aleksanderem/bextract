@@ -1,5 +1,5 @@
 import express from 'express';
-import { fetchBusiness, extractBusinessId } from './client.js';
+import { fetchBusiness, fetchReviews, extractBusinessId } from './client.js';
 import { ensureCredentials, refreshApiKey } from './auth.js';
 import { loadCredentials, clearCredentials } from './store.js';
 
@@ -33,6 +33,20 @@ app.use((req, res, next) => {
 app.get('/api/salon/:id', async (req, res) => {
   try {
     const data = await fetchBusiness(req.params.id);
+    res.json(data);
+  } catch (err) {
+    console.error('[server]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/salon/:id/reviews?page=1&per_page=10
+app.get('/api/salon/:id/reviews', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page || req.query.reviews_page || '1', 10);
+    const perPage = Math.max(1, Math.min(50, parseInt(req.query.per_page || req.query.reviews_per_page || '10', 10)));
+
+    const data = await fetchReviews(req.params.id, page, perPage);
     res.json(data);
   } catch (err) {
     console.error('[server]', err.message);
@@ -96,6 +110,7 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`[server] http://localhost:${PORT}`);
     console.log(`[server] GET /api/salon/:id`);
+    console.log(`[server] GET /api/salon/:id/reviews?page=1&per_page=10`);
     console.log(`[server] GET /api/salon?url=...`);
   });
 }
