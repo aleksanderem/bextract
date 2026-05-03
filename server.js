@@ -1,8 +1,11 @@
 import express from 'express';
-import { fetchBusiness, fetchReviews, extractBusinessId } from './client.js';
+import { fetchBusiness, fetchReviews, fetchListing, fetchLocationDetails, extractBusinessId } from './client.js';
 import { ensureCredentials, refreshApiKey } from './auth.js';
 import { loadCredentials, clearCredentials } from './store.js';
+import { initSentry, sentryErrorHandler } from "./observability.js";
 
+
+initSentry();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -107,7 +110,45 @@ async function start() {
     console.error('[server] pierwsze zapytanie sprobuje pobrac klucz automatycznie');
   }
 
-  app.listen(PORT, () => {
+  app.use(sentryErrorHandler());
+
+
+// Issue #34 — listing proxy. Caller paginates by shrinking area bbox.
+app.get('/api/booksy/listing', async (req, res) => {
+  const { category, location_id, area, location_geo, per_page } = req.query;
+  try {
+    const data = await fetchListing({
+      category: category != null ? Number(category) : null,
+      location_id: location_id != null ? Number(location_id) : null,
+      area: area || null,
+      location_geo: location_geo || null,
+      per_page: per_page != null ? Number(per_page) : null,
+    });
+    res.json(data);
+  } catch (err) {
+    console.error('[server] listing failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Issue #34 — fetch canonical hierarchy for a location_id (city → districts).
+// Discovery uses this to enumerate sub-locations for deep coverage.
+app.get('/api/booksy/location/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: 'invalid location id' });
+  }
+  try {
+    const details = await fetchLocationDetails(id);
+    if (!details) return res.status(404).json({ error: 'location not found' });
+    res.json(details);
+  } catch (err) {
+    console.error('[server] location details failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.listen(PORT, () => {
     console.log(`[server] http://localhost:${PORT}`);
     console.log(`[server] GET /api/salon/:id`);
     console.log(`[server] GET /api/salon/:id/reviews?page=1&per_page=10`);
