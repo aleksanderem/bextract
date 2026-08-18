@@ -77,12 +77,30 @@ export async function resolvePage(facebookUrl) {
         /"(?:page_id|pageID|associated_page_id|delegate_page_id)"\s*:\s*"?(\d{8,})"?/g,
       ),
     ].map((m) => m[1]);
-    if (ids.length === 0) return { pageId: null, pageName: null, reason: "no_page_id" };
-    const counts = new Map();
-    for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
-    const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
-    const title = (await page.title()).replace(/\s*\|\s*Facebook\s*$/i, "");
-    return { pageId: Number(best), pageName: title || null, via: "page_html" };
+    if (ids.length > 0) {
+      const counts = new Map();
+      for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
+      const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      const title = (await page.title()).replace(/\s*\|\s*Facebook\s*$/i, "");
+      return { pageId: Number(best), pageName: title || null, via: "page_html" };
+    }
+    // Fallback: publiczna strona sluga wpada w login-wall z DC IP. Widget
+    // page-plugin (do osadzania na stronach) renderuje się anonimowo i ma
+    // page_id w HTML.
+    await page.goto(
+      `https://www.facebook.com/plugins/page.php?href=${encodeURIComponent(
+        `https://www.facebook.com/${slug}`,
+      )}&tabs=&width=340&small_header=true`,
+      { waitUntil: "domcontentloaded", timeout: 30000 },
+    );
+    await page.waitForTimeout(3000);
+    const pluginHtml = await page.content();
+    const pluginId =
+      pluginHtml.match(/"(?:page_id|pageID|entity_id)"\s*:\s*"?(\d{8,})"?/)?.[1] ??
+      pluginHtml.match(/facebook\.com\/(\d{8,})/)?.[1] ??
+      null;
+    if (!pluginId) return { pageId: null, pageName: null, reason: "no_page_id" };
+    return { pageId: Number(pluginId), pageName: null, via: "page_plugin" };
   });
 }
 
