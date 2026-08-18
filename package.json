@@ -7,6 +7,7 @@
     "refresh": "node --env-file=.env refresh.js"
   },
   "dependencies": {
+    "@sentry/node": "^7.120.4",
     "express": "^4.21.0",
     "playwright-core": "^1.59.1"
   }

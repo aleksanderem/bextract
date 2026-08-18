@@ -71,3 +71,45 @@ export function extractBusinessId(url) {
   const fallback = url.match(/\/(\d+)(?:[_?#]|$)/);
   return fallback ? fallback[1] : null;
 }
+
+// Issue #34 — listing API. Two pagination paths:
+//   * geo: shrink the area bbox to surface different top-N
+//   * per_page: bump up to 100 (Booksy hard-caps at 100) for 5x more
+//     results in a single call vs the default 20.
+// Combined with location-id walking (city → districts via location_details.canonical_children)
+// this gives near-100% coverage without exhaustive bbox quad-tree.
+export async function fetchListing(opts) {
+  const params = new URLSearchParams({
+    response_type: "listing_web",
+    no_thumbs: "true",
+    include_venues: "1",
+    listing_id: crypto.randomUUID(),
+  });
+  if (opts.category != null) params.set("category", String(opts.category));
+  if (opts.location_id != null) params.set("location_id", String(opts.location_id));
+  if (opts.area) params.set("area", opts.area);
+  if (opts.location_geo) params.set("location_geo", opts.location_geo);
+  if (opts.per_page != null) {
+    const n = Math.max(1, Math.min(100, Number(opts.per_page) || 20));
+    params.set("businesses_per_page", String(n));
+  }
+  const url = `${API_BASE}/businesses/?${params.toString()}`;
+  return booksyFetchWithRetry(url, "listing");
+}
+
+// Issue #34 follow-up: location_details for a given location_id includes
+// canonical_children (e.g. Warsaw=3 has 90+ district sub-locations).
+// Re-uses the listing endpoint with per_page=1 to fetch cheaply.
+export async function fetchLocationDetails(locationId) {
+  const params = new URLSearchParams({
+    response_type: "listing_web",
+    no_thumbs: "true",
+    include_venues: "0",
+    listing_id: crypto.randomUUID(),
+    location_id: String(locationId),
+    businesses_per_page: "1",
+  });
+  const url = `${API_BASE}/businesses/?${params.toString()}`;
+  const data = await booksyFetchWithRetry(url, "location_details");
+  return data.location_details || null;
+}
