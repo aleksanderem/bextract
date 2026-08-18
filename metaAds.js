@@ -122,11 +122,22 @@ export async function fetchAds(pageId, { scrolls = 4 } = {}) {
         const id = text.match(/Identyfikator biblioteki:\s*(\d+)/)?.[1];
         if (!id || seen.has(id)) continue;
         seen.add(id);
-        out.push({ id, text: text.slice(0, 4000) });
+        // Miniatura kreacji: poster wideo > największy obrazek karty.
+        // Avatar strony to małe s60x60 — odpada przez próg rozmiaru.
+        const video = node.querySelector("video[poster]");
+        let mediaUrl = video ? video.poster : null;
+        if (!mediaUrl) {
+          const imgs = [...node.querySelectorAll("img")]
+            .map((i) => ({ src: i.src, size: (i.naturalWidth || i.width || 0) }))
+            .filter((i) => i.size >= 150 && /fbcdn/.test(i.src));
+          imgs.sort((a, b) => b.size - a.size);
+          mediaUrl = imgs[0]?.src ?? null;
+        }
+        out.push({ id, text: text.slice(0, 4000), mediaUrl });
       }
       return out;
     });
-    const ads = cards.map(({ id, text }) => {
+    const ads = cards.map(({ id, text, mediaUrl }) => {
       const startRaw =
         text.match(/Rozpoczęcie wyświetlania[^\n]*/)?.[0] ??
         text.match(/Data rozpoczęcia emisji[^\n]*/)?.[0] ??
@@ -144,9 +155,37 @@ export async function fetchAds(pageId, { scrolls = 4 } = {}) {
         adArchiveId: id,
         startedRunningOn: parsePlDate(startRaw),
         creativeText: creative,
+        mediaUrl,
         raw: { startRaw: startRaw.slice(0, 120) },
       };
     });
     return { pageId: Number(pageId), adCount: ads.length, ads };
   });
+}
+
+/**
+ * Pobiera miniatury kreacji na dysk (linki fbcdn wygasają po godzinach).
+ * Zwraca mapę adArchiveId -> ścieżka względna (/media/meta-ads/<id>.jpg).
+ */
+export async function downloadMedia(ads, mediaDir) {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  await fs.mkdir(mediaDir, { recursive: true });
+  const saved = {};
+  for (const ad of ads) {
+    if (!ad.mediaUrl) continue;
+    const file = path.join(mediaDir, `${ad.adArchiveId}.jpg`);
+    try {
+      // Nie pobieraj ponownie — kreacja się nie zmienia pod tym samym id.
+      await fs.access(file).catch(async () => {
+        const resp = await fetch(ad.mediaUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        await fs.writeFile(file, Buffer.from(await resp.arrayBuffer()));
+      });
+      saved[ad.adArchiveId] = `/media/meta-ads/${ad.adArchiveId}.jpg`;
+    } catch (err) {
+      console.warn(`[meta-ads] media ${ad.adArchiveId}: ${err.message}`);
+    }
+  }
+  return saved;
 }

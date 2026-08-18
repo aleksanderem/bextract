@@ -3,7 +3,9 @@ import { fetchBusiness, fetchReviews, fetchListing, fetchLocationDetails, extrac
 import { ensureCredentials, refreshApiKey } from './auth.js';
 import { loadCredentials, clearCredentials } from './store.js';
 import { initSentry, sentryErrorHandler } from "./observability.js";
-import { resolvePage as metaResolvePage, fetchAds as metaFetchAds } from './metaAds.js';
+import { resolvePage as metaResolvePage, fetchAds as metaFetchAds, downloadMedia as metaDownloadMedia } from './metaAds.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 
 initSentry();
@@ -25,6 +27,13 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+// Miniatury kreacji Meta — publiczne (ładowane przez <img> z panelu, bez
+// możliwości dołożenia nagłówka x-api-key). Same obrazki z publicznej
+// Ad Library — brak danych wrażliwych.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+export const META_MEDIA_DIR = path.join(__dirname, 'media', 'meta-ads');
+app.use('/media/meta-ads', express.static(META_MEDIA_DIR, { maxAge: '7d' }));
 
 app.use((req, res, next) => {
   if (req.headers['x-api-key'] !== API_KEY) {
@@ -131,6 +140,10 @@ app.get('/api/meta-ads', async (req, res) => {
   if (!/^\d+$/.test(pageId)) return res.status(400).json({ error: 'Brak/zly page_id' });
   try {
     const data = await metaFetchAds(pageId);
+    const media = await metaDownloadMedia(data.ads, META_MEDIA_DIR);
+    for (const ad of data.ads) {
+      ad.creativeImagePath = media[ad.adArchiveId] ?? null;
+    }
     res.json(data);
   } catch (err) {
     console.error('[meta-ads]', err.message);
