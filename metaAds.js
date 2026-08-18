@@ -90,6 +90,70 @@ export async function resolvePage(facebookUrl) {
  * Widok wszystkich AKTYWNYCH reklam strony. Infinite scroll — dociągamy
  * kilka ekranów (salony beauty rzadko mają >30 aktywnych kreacji).
  */
+
+/**
+ * Reklamy z JSON-a osadzonego w HTML strony wyników (search_results_connection
+ * → collated_results). Pewniejsze niż DOM: niesie publisher_platform,
+ * start/end_date i URL-e mediów wprost. Forward balanced-brace scan od
+ * literału {"ad_archive_id" (pierwszy klucz obiektu reklamy).
+ */
+function extractEmbeddedAds(html) {
+  const ads = [];
+  let from = 0;
+  for (;;) {
+    const start = html.indexOf('{"ad_archive_id"', from);
+    if (start < 0) break;
+    from = start + 1;
+    let depth = 0;
+    let end = -1;
+    for (let i = start; i < html.length; i++) {
+      const c = html[i];
+      if (c === '"') {
+        i++;
+        while (i < html.length && html[i] !== '"') {
+          if (html[i] === "\\") i++;
+          i++;
+        }
+        continue;
+      }
+      if (c === "{") depth++;
+      else if (c === "}") {
+        depth--;
+        if (depth === 0) { end = i + 1; break; }
+      }
+    }
+    if (end < 0) break;
+    try {
+      const obj = JSON.parse(html.slice(start, end));
+      if (obj && obj.ad_archive_id) ads.push(obj);
+    } catch { /* fragment nie był czystym JSON-em — pomiń */ }
+  }
+  return ads;
+}
+
+function embeddedToAd(obj) {
+  const snap = obj.snapshot || {};
+  const video = (snap.videos || [])[0];
+  const image = (snap.images || [])[0];
+  const mediaUrl =
+    (video && video.video_preview_image_url) ||
+    (image && (image.resized_image_url || image.original_image_url)) ||
+    null;
+  const bodyText =
+    (snap.body && (snap.body.text ?? snap.body.markup?.__html)) ?? null;
+  return {
+    adArchiveId: String(obj.ad_archive_id),
+    startedRunningOn: obj.start_date
+      ? new Date(obj.start_date * 1000).toISOString().slice(0, 10)
+      : null,
+    creativeText: typeof bodyText === "string" ? bodyText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || null : null,
+    platforms: (obj.publisher_platform || []).map((p) => String(p).toLowerCase()),
+    mediaUrl,
+    pageName: snap.page_name || null,
+    raw: { source: "embedded", collationCount: obj.collation_count ?? null },
+  };
+}
+
 export async function fetchAds(pageId, { scrolls = 4 } = {}) {
   return withBrowser(async (page) => {
     const url =
@@ -97,6 +161,16 @@ export async function fetchAds(pageId, { scrolls = 4 } = {}) {
       `&country=PL&view_all_page_id=${encodeURIComponent(pageId)}`;
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
     await page.waitForTimeout(6000);
+
+    // Ścieżka główna: JSON osadzony w HTML (platformy, daty, media wprost).
+    const embedded = [...new Map(
+      extractEmbeddedAds(await page.content()).map((o) => [String(o.ad_archive_id), o]),
+    ).values()];
+    if (embedded.length > 0) {
+      const ads = embedded.map(embeddedToAd);
+      return { pageId: String(pageId), adCount: ads.length, ads, source: "embedded" };
+    }
+    // Fallback: parsowanie DOM kart (stary tor).
     for (let i = 0; i < scrolls; i++) {
       await page.mouse.wheel(0, 2400);
       await page.waitForTimeout(1500);
