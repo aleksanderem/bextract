@@ -161,6 +161,13 @@ function embeddedToAd(obj) {
     (snap.body && (snap.body.text ?? snap.body.markup?.__html)) ?? null;
   return {
     adArchiveId: String(obj.ad_archive_id),
+    isActive: obj.is_active !== false,
+    // end_date dla aktywnych bywa planowanym końcem — bierzemy tylko gdy
+    // emisja faktycznie zakończona.
+    endedRunningOn:
+      obj.is_active === false && obj.end_date
+        ? new Date(obj.end_date * 1000).toISOString().slice(0, 10)
+        : null,
     startedRunningOn: obj.start_date
       ? new Date(obj.start_date * 1000).toISOString().slice(0, 10)
       : null,
@@ -172,19 +179,45 @@ function embeddedToAd(obj) {
   };
 }
 
-export async function fetchAds(pageId, { scrolls = 4 } = {}) {
+/**
+ * status: "active" (domyślnie — źródło prawdy dla diffu i alertów) albo
+ * "inactive" (historia DSA, do roku po końcu emisji; realny end_date).
+ * UWAGA: widoki active/inactive/all pokazują RÓŻNE ad_archive_id dla tych
+ * samych kampanii (reprezentanci kolacji) — nie wolno diffować aktywnych
+ * na podstawie widoku "all" (sprawdzone 2026-08-18: przecięcie 1/30).
+ */
+export async function fetchAds(pageId, { scrolls = 6, status = "active" } = {}) {
   return withBrowser(async (page) => {
     const url =
-      "https://www.facebook.com/ads/library/?active_status=active&ad_type=all" +
+      `https://www.facebook.com/ads/library/?active_status=${status}&ad_type=all` +
       `&country=PL&view_all_page_id=${encodeURIComponent(pageId)}`;
+    // Kolejne strony wyników dojeżdżają GraphQL-em przy scrollu — nie ma ich
+    // w HTML. Nasłuch odpowiedzi + ten sam skaner literału {"ad_archive_id".
+    const fromGraphql = [];
+    page.on("response", async (resp) => {
+      try {
+        if (!resp.url().includes("/api/graphql")) return;
+        const body = await resp.text();
+        if (body.includes('"ad_archive_id"')) {
+          fromGraphql.push(...extractEmbeddedAds(body.replace(/\\"/g, '"')));
+          fromGraphql.push(...extractEmbeddedAds(body));
+        }
+      } catch { /* odpowiedź nie-tekstowa — pomiń */ }
+    });
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
     await page.waitForTimeout(6000);
 
     // Ścieżka główna: JSON osadzony w HTML (platformy, daty, media wprost).
-    const embedded = [...new Map(
-      extractEmbeddedAds(await page.content()).map((o) => [String(o.ad_archive_id), o]),
-    ).values()];
-    if (embedded.length > 0) {
+    const htmlAds = extractEmbeddedAds(await page.content());
+    if (htmlAds.length > 0) {
+      for (let i = 0; i < scrolls; i++) {
+        await page.mouse.wheel(0, 2600);
+        await page.waitForTimeout(1500);
+      }
+      await page.waitForTimeout(2000);
+      const embedded = [...new Map(
+        [...htmlAds, ...fromGraphql].map((o) => [String(o.ad_archive_id), o]),
+      ).values()];
       const ads = embedded.map(embeddedToAd);
       return { pageId: String(pageId), adCount: ads.length, ads, source: "embedded" };
     }

@@ -139,7 +139,8 @@ app.get('/api/meta-ads', async (req, res) => {
   const pageId = String(req.query.page_id || '').trim();
   if (!/^\d+$/.test(pageId)) return res.status(400).json({ error: 'Brak/zly page_id' });
   try {
-    const data = await metaFetchAds(pageId);
+    const status = req.query.status === "inactive" ? "inactive" : "active";
+    const data = await metaFetchAds(pageId, { status });
     const media = await metaDownloadMedia(data.ads, META_MEDIA_DIR);
     for (const ad of data.ads) {
       ad.creativeImagePath = media[ad.adArchiveId] ?? null;
