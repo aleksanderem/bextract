@@ -149,6 +149,31 @@ function extractEmbeddedAds(html) {
   return ads;
 }
 
+// Etykiety pól formularza lead (PL/EN) — cały tekst to sama nazwa pola.
+const FORM_FIELD_RE = /^(full name|imi\u0119 i nazwisko|imi\u0119|nazwisko|phone number|numer telefonu|telefon|adres e-?mail|e-?mail|email|city|miasto|kod pocztowy|zip code|date of birth|data urodzenia|company name|nazwa firmy|province|wojew\u00f3dztwo|street address|ulica)$/i;
+const CONSENT_RE = /regulamin|zasady ochrony prywatno|polityka prywatno|privacy|poka\u017c zasady/i;
+const THANKYOU_RE = /dzi\u0119kujemy|wszystko gotowe|skontaktujemy si\u0119|wkr\u00f3tce/i;
+
+/**
+ * Dzieli extra_texts na PRAWDZIWE warianty tekstu (A/B) i elementy formularza
+ * lead (etykiety pól + zgody + ekran podziękowania). Kampania jest lead-owa,
+ * gdy pojawia się choć jedna etykieta pola formularza.
+ */
+function splitVariantsAndForm(texts) {
+  const variants = [];
+  const formFields = [];
+  let isLead = false;
+  for (const t of texts) {
+    if (FORM_FIELD_RE.test(t)) { isLead = true; formFields.push(t); }
+    else if (CONSENT_RE.test(t) || THANKYOU_RE.test(t)) { formFields.push(t); }
+    else variants.push(t);
+  }
+  // Zgody/podziękowania traktuj jako formularz TYLKO gdy to realnie lead
+  // (są etykiety pól); inaczej wracają do wariantów, by nie gubić copy.
+  if (!isLead) return { isLead: false, variants: texts.slice(), formFields: [] };
+  return { isLead: true, variants, formFields };
+}
+
 function embeddedToAd(obj) {
   const snap = obj.snapshot || {};
   const video = (snap.videos || [])[0];
@@ -159,6 +184,18 @@ function embeddedToAd(obj) {
     null;
   const bodyText =
     (snap.body && (snap.body.text ?? snap.body.markup?.__html)) ?? null;
+  const clean = (t) =>
+    typeof t === "string"
+      ? t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || null
+      : null;
+  // extra_texts to mieszanka: warianty tekstu (A/B) ORAZ — w kampaniach lead —
+  // etykiety pól formularza, zgody i ekran podziękowania. Rozdzielamy.
+  const allTexts = [...new Set(
+    (snap.extra_texts || [])
+      .map((x) => clean(typeof x === "string" ? x : x && x.text))
+      .filter(Boolean),
+  )];
+  const split = splitVariantsAndForm(allTexts);
   return {
     adArchiveId: String(obj.ad_archive_id),
     isActive: obj.is_active !== false,
@@ -171,7 +208,19 @@ function embeddedToAd(obj) {
     startedRunningOn: obj.start_date
       ? new Date(obj.start_date * 1000).toISOString().slice(0, 10)
       : null,
-    creativeText: typeof bodyText === "string" ? bodyText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || null : null,
+    creativeText: clean(bodyText),
+    // Nagłówek kreacji (title) i CTA — jasny podział w podglądzie.
+    creativeTitle: clean(snap.title),
+    ctaText: clean(snap.cta_text),
+    ctaType: snap.cta_type ? String(snap.cta_type) : null,
+    linkUrl: snap.link_url ? String(snap.link_url) : null,
+    caption: clean(snap.caption),
+    variants: split.variants,
+    isLeadForm: split.isLead,
+    formFields: split.formFields,
+    // Wideo: bezpośredni URL HD (fbcdn — wygasa, odświeżany co skan).
+    videoUrl: (video && (video.video_hd_url || video.video_sd_url)) || null,
+    isVideo: Boolean(video),
     platforms: (obj.publisher_platform || []).map((p) => String(p).toLowerCase()),
     mediaUrl,
     pageName: snap.page_name || null,
