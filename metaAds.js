@@ -149,29 +149,45 @@ function extractEmbeddedAds(html) {
   return ads;
 }
 
-// Etykiety pól formularza lead (PL/EN) — cały tekst to sama nazwa pola.
+// Etykiety STANDARDOWYCH pól formularza lead (PL/EN) — cały tekst to nazwa pola.
 const FORM_FIELD_RE = /^(full name|imi\u0119 i nazwisko|imi\u0119|nazwisko|phone number|numer telefonu|telefon|adres e-?mail|e-?mail|email|city|miasto|kod pocztowy|zip code|date of birth|data urodzenia|company name|nazwa firmy|province|wojew\u00f3dztwo|street address|ulica)$/i;
-const CONSENT_RE = /regulamin|zasady ochrony prywatno|polityka prywatno|privacy|poka\u017c zasady/i;
-const THANKYOU_RE = /dzi\u0119kujemy|wszystko gotowe|skontaktujemy si\u0119|wkr\u00f3tce/i;
+const CONSENT_RE = /regulamin|zasady ochrony prywatno|polityka prywatno|privacy policy|poka\u017c zasady|visit .* privacy/i;
+const THANKYOU_RE = /dzi\u0119kujemy|wype\u0142nienie formularza|wszystko gotowe|skontaktuje?my? si\u0119|wkr\u00f3tce si\u0119/i;
+const DATA_PRIVACY_RE = /twoje dane|dane s\u0105 u|bezpieczne|u\u017cyjemy ich|przetwarza/i;
 
 /**
- * Dzieli extra_texts na PRAWDZIWE warianty tekstu (A/B) i elementy formularza
- * lead (etykiety pól + zgody + ekran podziękowania). Kampania jest lead-owa,
- * gdy pojawia się choć jedna etykieta pola formularza.
+ * Dzieli extra_texts na PRAWDZIWE warianty tekstu (A/B) i CAŁY formularz lead.
+ * extra_texts to płaski zrzut w kolejności: [warianty…] → [linia o danych?] →
+ * [pytanie? → opcje…] → [pola standardowe] → [zgody] → [podziękowanie].
+ * Formularz to spójny OGON. Znajdujemy pierwsze standardowe pole i cofamy
+ * granicę przez poprzedzające opcje dropdowna, pytanie i linię o danych —
+ * inaczej opcje typu „Pachy/Bikini/Nogi" przeciekają do wariantów.
  */
 function splitVariantsAndForm(texts) {
-  const variants = [];
-  const formFields = [];
-  let isLead = false;
-  for (const t of texts) {
-    if (FORM_FIELD_RE.test(t)) { isLead = true; formFields.push(t); }
-    else if (CONSENT_RE.test(t) || THANKYOU_RE.test(t)) { formFields.push(t); }
-    else variants.push(t);
+  let firstStd = -1;
+  for (let i = 0; i < texts.length; i++) {
+    if (FORM_FIELD_RE.test(texts[i].trim())) { firstStd = i; break; }
   }
-  // Zgody/podziękowania traktuj jako formularz TYLKO gdy to realnie lead
-  // (są etykiety pól); inaczej wracają do wariantów, by nie gubić copy.
-  if (!isLead) return { isLead: false, variants: texts.slice(), formFields: [] };
-  return { isLead: true, variants, formFields };
+  if (firstStd === -1) return { isLead: false, variants: texts.slice(), formFields: [] };
+
+  const isOption = (t) => {
+    const s = t.trim();
+    return s.split(/\s+/).length <= 3 && s.length <= 30 && !/[.!]$/.test(s);
+  };
+  const isQuestion = (t) => /\?\s*$/.test(t.trim());
+
+  let start = firstStd;
+  for (let i = firstStd - 1; i >= 0; i--) {
+    const t = texts[i];
+    if (isOption(t) || isQuestion(t) || CONSENT_RE.test(t) || THANKYOU_RE.test(t) || DATA_PRIVACY_RE.test(t)) {
+      start = i;
+    } else break;
+  }
+  return {
+    isLead: true,
+    variants: texts.slice(0, start),
+    formFields: texts.slice(start),
+  };
 }
 
 function embeddedToAd(obj) {
