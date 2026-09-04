@@ -239,7 +239,10 @@ function embeddedToAd(obj) {
     isVideo: Boolean(video),
     platforms: (obj.publisher_platform || []).map((p) => String(p).toLowerCase()),
     mediaUrl,
-    pageName: snap.page_name || null,
+    // Nazwa strony: w collated_results siedzi na poziomie reklamy (page_name),
+    // snapshot.page_name bywa null — bez tego bagent nie mógł sprawdzić, czy link
+    // spoza Booksy (stopka WWW, wyszukiwarka) prowadzi na stronę TEGO salonu.
+    pageName: obj.page_name || snap.page_name || null,
     raw: { source: "embedded", collationCount: obj.collation_count ?? null },
   };
 }
