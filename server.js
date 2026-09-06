@@ -4,6 +4,7 @@ import { ensureCredentials, refreshApiKey } from './auth.js';
 import { loadCredentials, clearCredentials } from './store.js';
 import { initSentry, sentryErrorHandler } from "./observability.js";
 import { resolvePage as metaResolvePage, fetchAds as metaFetchAds, downloadMedia as metaDownloadMedia } from './metaAds.js';
+import { startSettingsSync } from './settingsSync.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,6 +20,10 @@ if (!API_KEY) {
   console.error('[server] brak API_KEY w env — ustaw go przed startem');
   process.exit(1);
 }
+
+// Nadpisania z panelu admina „Klucze i stałe" (np. BROWSERLESS_TOKEN) —
+// przy starcie i co 5 minut, bez restartu. Patrz settingsSync.js.
+startSettingsSync();
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
