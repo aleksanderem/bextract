@@ -47,6 +47,26 @@ app.use((req, res, next) => {
   next();
 });
 
+// Panel admina „Klucze i stałe" (Convex settings/reveal.ts): stan zmiennych
+// tego procesu (czy ustawiona + końcówka), a z ?key= pełna wartość jednej.
+// Chronione x-api-key jak reszta; wartości niesekretne wracają w całości.
+const SETTINGS_KEYS = ['API_KEY', 'BROWSERLESS_TOKEN', 'BUGSINK_DSN_BEXTRACT', 'CONVEX_SITE_URL', 'PORT'];
+const SECRET_KEYS = new Set(['API_KEY', 'BROWSERLESS_TOKEN', 'BUGSINK_DSN_BEXTRACT']);
+app.get('/api/internal/settings', (req, res) => {
+  const key = typeof req.query.key === 'string' ? req.query.key : null;
+  if (key) {
+    if (!SETTINGS_KEYS.includes(key)) return res.status(404).json({ error: 'nieznany klucz' });
+    return res.json({ key, value: process.env[key] ?? '' });
+  }
+  const settings = {};
+  for (const k of SETTINGS_KEYS) {
+    const v = process.env[k] ?? '';
+    settings[k] = { set: v !== '', tail: v.length >= 8 ? v.slice(-4) : '' };
+    if (!SECRET_KEYS.has(k)) settings[k].value = v;
+  }
+  res.json({ settings });
+});
+
 // GET /api/salon/:id
 app.get('/api/salon/:id', async (req, res) => {
   try {
